@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.env
+*.log
+soul.db
+persona.json
+_stickers/
+webui.json
+napcat_cred.txt
+token.txt
