@@ -37,7 +37,26 @@ function Test-PortListening([int]$Port) {
 
 # 前台窗口是否占满整块屏幕（全屏游戏 / 全屏视频）
 function Test-FullscreenForeground {
-    try {
+    
+function Remove-DuplicateQq {
+    # 同号双开是掉线头号原因：后启动的那个实例会把登录态顶掉。
+    # 只保留最早启动的那棵树（NapCat 注入的），杀掉其余实例。
+    $procs = @(Get-CimInstance Win32_Process -Filter "Name='QQ.exe'" -ErrorAction SilentlyContinue)
+    if ($procs.Count -lt 2) { return $false }
+    $ids = @{}
+    foreach ($x in $procs) { $ids[[int]$x.ProcessId] = $true }
+    $roots = @($procs | Where-Object { -not $ids.ContainsKey([int]$_.ParentProcessId) })
+    if ($roots.Count -lt 2) { return $false }
+    $keep = $roots | Sort-Object CreationDate | Select-Object -First 1
+    foreach ($r in @($roots | Where-Object { $_.ProcessId -ne $keep.ProcessId })) {
+        Log ("dup qq instance: killing root pid {0} (keep {1})" -f $r.ProcessId, $keep.ProcessId)
+        Stop-Process -Id ([int]$r.ProcessId) -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Seconds 5
+    return $true
+}
+
+try {
         if (-not ('GuardFgWin' -as [type])) {
             $code = @"
 using System;
@@ -135,7 +154,10 @@ try {
         exit 0
     }
 
-    # 2. NapCat 的 WebUI（6099）没起来 → 确保只有一份 QQ，然后拉一次
+    # 2. 同号双开：只保留最早那份，否则登录态会被顶掉
+    if (-not (Test-PortListening 6200)) { [void](Remove-DuplicateQq) }
+
+    # 3. NapCat 的 WebUI（6099）没起来 → 确保只有一份 QQ，然后拉一次
     if (-not (Test-PortListening 6099)) {
         $starting = $false
         if (Get-Process NapCatWinBootMain -ErrorAction SilentlyContinue) { $starting = $true }

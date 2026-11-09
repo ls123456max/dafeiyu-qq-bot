@@ -50,9 +50,11 @@ Start-Process pythonw.exe -ArgumentList 'D:\NapCat\qr_portal.py','--napcat-dir',
 python D:\NapCat\napcat_relogin.py --napcat-dir D:\NapCat --wait 300
 # 退出码 0 = 已登录；1 = 仍需扫码；2 = 连不上 NapCat
 
-# 6) 给 fish-soul 打补丁（可选，加了 sticker_find 工具）
+# 6) 给 fish-soul 打补丁（可选：sticker_find 工具 + 每天自动发说说/改签名）
 python patches\fish-soul\apply_patches.py
 # 还原：python patches\fish-soul\apply_patches.py --revert
+# 打完必须重启 DSH 才生效；说说默认 9 点后一天一条、好友可见
+# 想关掉：soul.db 的 kv 表写 feed.config = {"enabled": false}
 ```
 
 ## 3. 必须停下来问人类的事

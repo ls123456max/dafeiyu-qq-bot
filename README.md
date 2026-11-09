@@ -12,7 +12,7 @@
 >
 > 如果你不能接受以上任何一条，请立即停止使用并删除本仓库相关内容。
 
-把「大肥鱼」这类角色人格接进 QQ，让它像真人一样聊天：有记忆、会发表情包、能自己刷抖音、可以在群里被 @ 回应。
+把「大肥鱼」这类角色人格接进 QQ，让它像真人一样聊天：有记忆、会发表情包、能自己刷抖音、可以在群里被 @ 回应，还会在节气/节日当天自己发一条 QQ 空间说说、顺手改个签名（v1.1 新增）。
 
 这个仓库不是一个新的聊天框架，而是**一套把现成组件粘起来、并解决它在 Windows 上长期挂机时各种「又掉线了」问题的工具与补丁**。主力运行时是 [DeepSeek Harness](https://github.com/deepseek-ai) 的插件 `dsh-fish-soul`，QQ 通道走 [NapCat](https://github.com/NapNeko/NapCatQQ)（OneBot 11）。
 
@@ -52,7 +52,7 @@
 | `scripts/napcat/` | 启动 NapCat、二维码扫码页面、快速登录与重登 |
 | `scripts/session/` | 每天 05:00 换会话（控制 token 成本） |
 | `scripts/stickers/` | 把表情包目录导入 `_stickers`（自动改名/压缩大 GIF） |
-| `patches/fish-soul/` | 给 `dsh-fish-soul` 打的补丁：她自己上网找表情包（图库优先，再 Bing 搜图） |
+| `patches/fish-soul/` | 给 `dsh-fish-soul` 打的两个可选补丁：①她自己找表情包（图库优先，再 Bing 搜图）②每天发一条 QQ 空间说说 + 改签名 |
 | `examples/` | `fish-soul-config` 示例、NapCat OneBot 示例、人格卡模板（都做了脱敏） |
 | `docs/` | 部署步骤、费用估算、故障排查 |
 | `requirements.txt` | Python 可选依赖：`qrcode`（扫码页）、`pillow`（压大 GIF） |
@@ -149,6 +149,25 @@ schtasks /Create /TN "DafeiyuGuard" /TR 'wscript.exe "D:\NapCat\guard_hidden.vbs
 
 `scripts/guard/register-task.ps1` 里有完整参数和说明。
 
+### 4.4 让她自己发说说 / 改签名（可选，v1.1）
+
+`patches/fish-soul/` 里的第二个补丁会每天 9 点后检查一次：如果今天还没发过，就让她按当天的节气/节日（小雪、冬至、立冬、除夕、中秋……）和最近的记忆写 1–2 句，发一条 QQ 空间说说（默认好友可见），同时把个性签名换成同一条里给的那句。
+
+```powershell
+python patches\fish-soul\apply_patches.py      # 打补丁
+python patches\fish-soul\apply_patches.py --revert  # 还原
+```
+
+打完要重启 DSH。想改行为不用改代码，在 `soul.db` 的 `kv` 表里写 `feed.config`：
+
+```json
+{"enabled": true, "hour": 9, "ugcRight": 4, "setSignature": true}
+```
+
+`ugcRight`：`1` 公开、`4` 好友可见（默认）、`16`/`128` 指定好友可见（需 `target_uins`）。临时关掉就写 `{"enabled": false}`。
+
+注意：她只会**新增**说说，不会删旧的；`get_qzone_msg_list` 这个接口在 NapCat 上不可用（返回「响应不完整」），所以列表要去手机 QQ 空间看。
+
 ## 5. 费用（一句话版）
 
 | 项目 | 费用 |
@@ -173,6 +192,8 @@ schtasks /Create /TN "DafeiyuGuard" /TR 'wscript.exe "D:\NapCat\guard_hidden.vbs
 | 清缓存/省钱 | 跑 `scripts/session/rotate_session.py`，让她下一条消息开新会话 |
 | 看她花了多少 | DeepSeek 控制台的用量页；本地看 `~/.dsh/.dshw-usage.json`（只有余额差） |
 | 临时停掉她 | 停 NapCat（她收不到消息），或把 `qq.enabled` 设 false |
+| 让她今天别发说说 | `kv` 里写 `feed.config = {"enabled": false}`，或把她当天要发的 `feed.last` 改成今天 |
+| 看她发过的说说 | 手机 QQ 空间；本地 `kv` 的 `feed.history` 只留最近 30 条生成记录 |
 
 ## 7. 合规与风险（务必读）
 
@@ -190,6 +211,8 @@ schtasks /Create /TN "DafeiyuGuard" /TR 'wscript.exe "D:\NapCat\guard_hidden.vbs
 5. 两个 QQ 实例同时跑（重复拉起）→ 登录态被顶掉、频繁要扫码；**启动前必须检查单实例**
 6. NapCat 从启动到 6099 监听要 **2–3 分钟**，等待窗口别设太短
 7. 群消息收不到 ≠ 白名单问题，先重启一次 QQ 客户端
+8. `get_supported_actions` 在 NapCat 的 Debug 适配器上返回 0 条，不要用它判断能力；`send_qzone_msg` / `set_self_longnick` 是实测可用的
+9. `send_qzone_msg` 的 `ugc_right` 只认 `1/4/16/64/128`，乱填会失败；`get_qzone_msg_list` 不可用（响应不完整）
 
 ## 9. 参考
 

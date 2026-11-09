@@ -1,4 +1,4 @@
-# 故障排查
+﻿# 故障排查
 
 按「症状 → 先查什么 → 常见原因 → 怎么修」组织。所有命令都可以直接复制。
 
@@ -132,4 +132,9 @@ Get-Process QQ | Sort-Object StartTime -Descending | Select-Object -First 1   # 
 
 `guard_once.ps1` 的做法：最新 QQ 进程启动不到 200 秒，就记一行
 `6099 not up yet (NapCat still starting, wait)` 直接退出，等下一轮（5 分钟后）再看。
+## 14. 她不发说说 / 签名没变
 
+- 补丁打完要**重启 DSH**；FeedWriter 启动后每 10 分钟 check 一次，第一次真正发要等到 9 点之后。
+- 看有没有跑过：soul.db 的 kv 表里应该有 eed.tries.<日期>；发过会有 eed.last 和 eed.history。
+- 如果 eed.tries 有、但说说没出现：多半是 ugc_right 不合法（只认 1/4/16/64/128），或账号被风控限制发说说。
+- 想临时关掉：kv 里写 eed.config = {"enabled": false}。

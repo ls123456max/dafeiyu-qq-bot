@@ -2,8 +2,9 @@
 """给 dsh-fish-soul 打两个补丁（可重复执行，已打过就跳过）。
 
 1. lib/sticker-find.js           —— 新增「自己找表情包」模块
-2. lib/index.js                  —— import 该模块 + 注册 sticker_find 工具
-3. lib/gateway.js                —— 把 sticker_find 加进 QQ 会话可用工具
+2. lib/feed.js                   —— 新增「每天发一条 QQ 空间说说 + 改签名」模块
+3. lib/index.js                  —— import 两个模块、注册 sticker_find 工具、启动 FeedWriter
+4. lib/gateway.js                —— 把 sticker_find 加进 QQ 会话可用工具
 
 用法：
     python apply_patches.py                     # 自动找 ~/.dsh/profiles/*/node_modules
@@ -24,6 +25,20 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 IMPORT_ANCHOR = "} from './db.js';"
 IMPORT_LINE = "import { findAndSaveStickers } from './sticker-find.js';"
 TOOL_ANCHOR = "})), 'dsh-fish-soul: fish_search');"
+
+# ── 动态/签名补丁（v1.1）──
+FEED_IMPORT_ANCHOR = "} from './behavior.js';"
+FEED_IMPORT_LINE = "import { FeedWriter } from './feed.js';"
+FEED_ANCHOR = "ctx.effect(() => () => diary.stop(), 'dsh-fish-soul: diary');"
+
+FEED_BLOCK = """
+	// ── 每天一条自己的 QQ 空间说说 + 个性签名（有节气/节日时自然带到）──
+	const feed = new FeedWriter({
+		db, clock, worker, callLlm: llmRouter.bound('diary'), getConfig, personaName: () => persona.name, channel, note: noteAct, log
+	});
+	feed.start(hook.feedEveryMs ?? 10 * 60_000);
+	ctx.effect(() => () => feed.stop(), 'dsh-fish-soul: feed');
+"""
 
 TOOL_BLOCK = """
 	// ── 工具：sticker_find（自己找表情包，优先翻图库，再上网搜；只在聊天会话里能用）──
@@ -94,20 +109,35 @@ def patch_index(lib: str) -> bool:
     path = os.path.join(lib, "index.js")
     with open(path, "r", encoding="utf-8") as fh:
         text = fh.read()
-    if "sticker_find" in text and "sticker-find.js" in text:
-        print("[patch] index.js already patched")
-        return False
+    changed = False
 
     if IMPORT_LINE not in text:
         if IMPORT_ANCHOR not in text:
             raise SystemExit("index.js 结构不符（找不到 db.js 的 import 结尾），版本可能不同")
         text = text.replace(IMPORT_ANCHOR, IMPORT_ANCHOR + "\n" + IMPORT_LINE, 1)
+        changed = True
 
     if "sticker_find" not in text:
         if TOOL_ANCHOR not in text:
             raise SystemExit("index.js 结构不符（找不到 fish_search 注册结尾）")
         text = text.replace(TOOL_ANCHOR, TOOL_ANCHOR + "\n" + TOOL_BLOCK, 1)
+        changed = True
 
+    if FEED_IMPORT_LINE not in text:
+        if FEED_IMPORT_ANCHOR not in text:
+            raise SystemExit("index.js 结构不符（找不到 behavior.js 的 import 结尾）")
+        text = text.replace(FEED_IMPORT_ANCHOR, FEED_IMPORT_ANCHOR + "\n" + FEED_IMPORT_LINE, 1)
+        changed = True
+
+    if "new FeedWriter(" not in text:
+        if FEED_ANCHOR not in text:
+            raise SystemExit("index.js 结构不符（找不到 diary.stop 那行）")
+        text = text.replace(FEED_ANCHOR, FEED_ANCHOR + "\n" + FEED_BLOCK, 1)
+        changed = True
+
+    if not changed:
+        print("[patch] index.js already patched")
+        return False
     backup(path)
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
@@ -137,12 +167,13 @@ def patch_gateway(lib: str) -> bool:
 
 
 def copy_module(lib: str) -> None:
-    src = os.path.join(HERE, "sticker-find.js")
-    dst = os.path.join(lib, "sticker-find.js")
-    if os.path.exists(dst):
-        print("[patch] sticker-find.js exists, overwrite")
-    shutil.copy2(src, dst)
-    print("[patch] sticker-find.js installed")
+    for name in ("sticker-find.js", "feed.js"):
+        src = os.path.join(HERE, name)
+        dst = os.path.join(lib, name)
+        if os.path.exists(dst):
+            print(f"[patch] {name} exists, overwrite")
+        shutil.copy2(src, dst)
+        print(f"[patch] {name} installed")
 
 
 def revert(lib: str) -> None:
@@ -152,10 +183,11 @@ def revert(lib: str) -> None:
         if os.path.exists(bak):
             shutil.copy2(bak, path)
             print(f"[revert] {name} restored")
-    module = os.path.join(lib, "sticker-find.js")
-    if os.path.exists(module):
-        os.remove(module)
-        print("[revert] sticker-find.js removed")
+    for name in ("sticker-find.js", "feed.js"):
+        module = os.path.join(lib, name)
+        if os.path.exists(module):
+            os.remove(module)
+            print(f"[revert] {name} removed")
     print("[revert] 重启 DSH 生效")
 
 
