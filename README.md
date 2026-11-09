@@ -1,4 +1,4 @@
-# 大肥鱼 QQ Bot · 部署与运维工具包
+﻿# 大肥鱼 QQ Bot · 部署与运维工具包
 
 > ## ⚠️ 免责声明（先读这一段）
 >
@@ -196,6 +196,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\napcat\set-qq-passwo
 详细测算见 [docs/cost.md](docs/cost.md)。
 
 ## 6. 日常运维
+
+> 她和群里的机器人对刷停不下来？`fish-soul-config.json` 里 `qq.burstLimit` 默认 15（一次接话最多连着说 15 条），`qq.burstCooldownMinutes` 默认 10（说完冷却 10 分钟才能再开口）；改成 `3` 更安静，`0` 表示不限。
+
 
 | 想做的事 | 怎么做 |
 |---|---|

@@ -5,8 +5,13 @@
     "wsUrl": "ws://127.0.0.1:6200",
     "accessToken": "",
     "allGroups": false,
-    "groupAllowList": ["123456789"],
-    "callNames": ["小鱼", "大肥鱼"],
+    "groupAllowList": [
+      "123456789"
+    ],
+    "callNames": [
+      "小鱼",
+      "大肥鱼"
+    ],
     "followUpCount": 3,
     "followUpSeconds": 120,
     "interject": {
@@ -16,16 +21,24 @@
       "maxPerHour": 8,
       "masterQuiet": true,
       "masterQuietMinutes": 5
-    }
+    },
+    "burstLimit": 15,
+    "burstCooldownMinutes": 10
   },
   "tools": {
-    "web": { "enabled": true, "perDay": 50, "provider": "host" },
+    "web": {
+      "enabled": true,
+      "perDay": 50,
+      "provider": "host"
+    },
     "sessionAllow": "memory"
   },
   "douyin": {
     "enabled": true,
     "autoReply": false,
-    "browser": { "kind": "edge" },
+    "browser": {
+      "kind": "edge"
+    },
     "browse": {
       "enabled": true,
       "perDay": 10,
@@ -35,6 +48,12 @@
       "shareInDm": false
     }
   },
-  "memory": { "autoExtract": true, "idleMinutes": 10, "maxLines": 40 },
-  "sessions": { "workspacePath": "" }
+  "memory": {
+    "autoExtract": true,
+    "idleMinutes": 10,
+    "maxLines": 40
+  },
+  "sessions": {
+    "workspacePath": ""
+  }
 }

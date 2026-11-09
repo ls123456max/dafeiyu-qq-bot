@@ -30,7 +30,6 @@ TOOL_ANCHOR = "})), 'dsh-fish-soul: fish_search');"
 FEED_IMPORT_ANCHOR = "} from './behavior.js';"
 FEED_IMPORT_LINE = "import { FeedWriter } from './feed.js';"
 FEED_ANCHOR = "ctx.effect(() => () => diary.stop(), 'dsh-fish-soul: diary');"
-
 FEED_BLOCK = """
 	// ── 每天一条自己的 QQ 空间说说 + 个性签名（有节气/节日时自然带到）──
 	const feed = new FeedWriter({
@@ -38,6 +37,60 @@ FEED_BLOCK = """
 	});
 	feed.start(hook.feedEveryMs ?? 10 * 60_000);
 	ctx.effect(() => () => feed.stop(), 'dsh-fish-soul: feed');
+"""
+
+# ── 群聊每日回复上限（v1.3.1）：防止和群里的机器人无限对刷 ──
+CAP_DAY_ANCHOR = "/** QQ 会话里模型能用的全部工具"
+CAP_HELPER = """/** 北京时间当天（YYYY-MM-DD），记在 burst 计数里方便排查。 */
+function bjDay(ms) {
+	return new Date(ms + 8 * 3600_000).toISOString().slice(0, 10);
+}
+
+"""
+CAP_DISPATCH_ANCHOR = (
+    "\tasync dispatch(channelId, items) {\n"
+    "\t\tif (this.stopped || items.length === 0) return;\n"
+    "\t\tconst first = items[0].m;"
+)
+CAP_DISPATCH_BLOCK = CAP_DISPATCH_ANCHOR + """
+\t\t// 群里「连着说」上限：一次接话最多 N 条，说完冷却 M 分钟才能再开口。
+\t\t// 冷掉（超过 M 分钟没说话）就重新计数；私聊不限。
+\t\tif (first.chatType === 'group') {
+\t\t\tconst cfg = this.qqConfig();
+\t\t\tconst limit = Number(cfg.burstLimit ?? 15) || 0;
+\t\t\tconst cooldownMs = (Number(cfg.burstCooldownMinutes ?? 10) || 10) * 60_000;
+\t\t\tif (limit > 0) {
+\t\t\t\tconst key = `qq.burst.${channelId}`;
+\t\t\t\tconst st = getKv(this.db, key, null) ?? {};
+\t\t\t\tconst now = this.clock.now();
+\t\t\t\tconst lastAt = Number(st.lastAt) || 0;
+\t\t\t\tlet count = Number(st.count) || 0;
+\t\t\t\tif (now - lastAt >= cooldownMs) count = 0;
+\t\t\t\tif (count >= limit) {
+\t\t\t\t\tconst left = Math.max(1, Math.ceil((cooldownMs - (now - lastAt)) / 60000));
+\t\t\t\t\tthis.note('capped', { channelId, reason: `连着说了 ${count} 条，冷却中（约 ${left} 分钟后能再开口）` });
+\t\t\t\t\treturn;
+\t\t\t\t}
+\t\t\t\tsetKv(this.db, key, { count: count + 1, lastAt: now, date: bjDay(now) });
+\t\t\t}
+\t\t}
+"""
+
+# 旧版（v1.4 之前的「每天 15 条」）：升级时整段替换掉
+OLD_DAILY_BLOCK = """
+\t\t// 每个群每天最多回 N 条（默认 15），防止和群里的机器人无限对刷；私聊不限。
+\t\tif (first.chatType === 'group') {
+\t\t\tconst cap = Number(this.qqConfig().groupDailyCap ?? 15) || 0;
+\t\t\tif (cap > 0) {
+\t\t\t\tconst key = `qq.dailyReplies.${channelId}.${bjDay(this.clock.now())}`;
+\t\t\t\tconst used = Number(getKv(this.db, key, 0)) || 0;
+\t\t\t\tif (used >= cap) {
+\t\t\t\t\tthis.note('capped', { channelId, reason: `今天这个群已经回了 ${used} 条（上限 ${cap}），先不再开口` });
+\t\t\t\t\treturn;
+\t\t\t\t}
+\t\t\t\tsetKv(this.db, key, used + 1);
+\t\t\t}
+\t\t}
 """
 
 TOOL_BLOCK = """
@@ -149,16 +202,39 @@ def patch_gateway(lib: str) -> bool:
     path = os.path.join(lib, "gateway.js")
     with open(path, "r", encoding="utf-8") as fh:
         text = fh.read()
+    changed = False
+
+    # ① sticker_find 加进 QQ 会话工具白名单
     pattern = re.compile(r"export const QQ_SESSION_TOOLS = \[([^\]]*)\];")
     m = pattern.search(text)
     if m is None:
         raise SystemExit("gateway.js 里找不到 QQ_SESSION_TOOLS")
-    if "'sticker_find'" in m.group(1):
+    if "'sticker_find'" not in m.group(1):
+        items = [s.strip() for s in m.group(1).split(",") if s.strip()]
+        items.append("'sticker_find'")
+        text = text[:m.start()] + "export const QQ_SESSION_TOOLS = [" + ", ".join(items) + "];" + text[m.end():]
+        changed = True
+
+    # ② 群聊「连着说」上限（burst，默认 15 条 + 冷却 10 分钟）
+    if "function bjDay(" not in text:
+        if CAP_DAY_ANCHOR not in text:
+            raise SystemExit("gateway.js 结构不符（找不到 QQ_SESSION_TOOLS 注释行）")
+        text = text.replace(CAP_DAY_ANCHOR, CAP_HELPER + CAP_DAY_ANCHOR, 1)
+        changed = True
+    if "qq.burst." not in text:
+        if "qq.dailyReplies" in text:
+            # 从旧的「每天 15 条」升级
+            if OLD_DAILY_BLOCK not in text:
+                raise SystemExit("检测到旧的每日上限补丁，但没找到可替换的代码块；请先 --revert 再打")
+            text = text.replace(OLD_DAILY_BLOCK, "", 1)
+        if CAP_DISPATCH_ANCHOR not in text:
+            raise SystemExit("gateway.js 结构不符（找不到 dispatch 开头）")
+        text = text.replace(CAP_DISPATCH_ANCHOR, CAP_DISPATCH_BLOCK, 1)
+        changed = True
+
+    if not changed:
         print("[patch] gateway.js already patched")
         return False
-    items = [s.strip() for s in m.group(1).split(",") if s.strip()]
-    items.append("'sticker_find'")
-    text = text[:m.start()] + "export const QQ_SESSION_TOOLS = [" + ", ".join(items) + "];" + text[m.end():]
     backup(path)
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)

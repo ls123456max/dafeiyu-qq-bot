@@ -5,6 +5,7 @@
 1. **`sticker_find` 工具**：她可以自己找表情包 —— 先翻 `_stickers` 图库，没有再上网搜（Bing 图片），存进图库后就能发。
 2. **图库优先**：问「大肥鱼 / 鲸鱼」这类指向她自己的词时，直接从她自己的图库里挑，而不是搜回一堆真鱼照片。
 3. **每天发一条说说 + 改签名**（v1.1）：按当天节气/节日和最近记忆写 1–2 句，发 QQ 空间说说，并顺手改个性签名。默认 9 点后一天一次、好友可见。
+4. **群聊「连着说」上限**（v1.3.2）：一次接话最多 15 条，说完冷却 10 分钟才能再开口，防止和群里的机器人无限对刷。私聊不限。
 
 ## 安装
 
@@ -18,6 +19,7 @@ python apply_patches.py --pkg <dsh-fish-soul 包目录>   # 手动指定
 - 复制 `sticker-find.js`、`feed.js` 到 `lib/`
 - 在 `lib/index.js` 里加 import、注册 `sticker_find` 工具（插在 `fish_search` 后面）、在 diary 停止之后启动 `FeedWriter`
 - 在 `lib/gateway.js` 的 `QQ_SESSION_TOOLS` 里加 `'sticker_find'`
+- 在 `lib/gateway.js` 加 `bjDay()` 与 `dispatch()` 开头的群聊 burst 上限
 - 原文件备份为 `*.bak-sticker`
 
 脚本是**幂等**的：已经打过的改动会跳过，重复执行不会叠加。
@@ -46,6 +48,18 @@ python apply_patches.py --revert
 - `enabled: false` 可临时关闭
 
 节气表覆盖 2026-11 到 2027-12；节日表有除夕、春节、元宵、520、中秋、国庆等。
+
+## 群聊「连着说」配置
+
+不用改代码，`fish-soul-config.json` 里写：
+
+```json
+"qq": {"burstLimit": 15, "burstCooldownMinutes": 10}
+```
+
+- `burstLimit`：一次接话最多连着说几条（`0` = 不限）
+- `burstCooldownMinutes`：说完冷却多少分钟才能再开口；冷却按她最后一条消息起算
+- 计数存 `soul.db` 的 kv（`qq.burst.<群号>`），重启不清零
 
 ## 可选配置
 
