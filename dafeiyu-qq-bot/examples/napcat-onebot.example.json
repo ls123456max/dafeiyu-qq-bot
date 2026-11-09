@@ -1,0 +1,22 @@
+{
+  "network": {
+    "websocketServers": [
+      {
+        "name": "fishsoul",
+        "enable": true,
+        "host": "127.0.0.1",
+        "port": 6200,
+        "messagePostFormat": "array",
+        "reportSelfMessage": false,
+        "token": "",
+        "enableForcePushEvent": false,
+        "debug": false,
+        "heartInterval": 30000
+      }
+    ],
+    "websocketClients": []
+  },
+  "musicSignUrl": "",
+  "enableLocalFile2Url": false,
+  "parseMultMsg": false
+}

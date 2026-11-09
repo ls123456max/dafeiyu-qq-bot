@@ -107,3 +107,29 @@ Set-Content -Path x.ps1 -Value $content -Encoding UTF8   # 5.1 会写成带 BOM
 
 数据全在 `%USERPROFILE%\.dsh\fish-soul\soul.db`（人格、记忆、好感、日程、待办）。
 直接复制这个文件即可；`persona.json`、`fish-soul-config.json` 也建议一起备份。
+
+## 12. 「明明勾了记住密码，还是要扫码」——多半是双开
+
+同一个 QQ 号开两个实例，后登的会把先登的顶下去，快速登录票据随之失效
+（`SetQuickLogin` 返回 `{"code":-1,"message":"登录态已失效，请重新登录。"}`）。
+
+- `Get-Process QQ | Measure-Object` 或任务管理器确认只有**一个** QQ
+- `start_napcat.bat` 里已经有单实例保护（`tasklist | find "QQ.exe"`），不要自己再拉一次
+- 守护脚本的限流文件（`%TEMP%\dafeiyu_last_qqkill.txt` / `dafeiyu_last_quicktry.txt`）
+  就是为防「重启→要扫码→再重启」的死循环
+
+## 13. NapCat 启动了但 6099 一直不开
+
+从双击到 6099 监听、6200 起来，实测要 **2–3 分钟**（4800X/低配机更久）。
+这期间**绝对不要**再拉一个实例，否则就是第 12 条的双开。
+
+判断「还在启动」而不是「已经死了」：
+
+```powershell
+Get-Process NapCatWinBootMain -ErrorAction SilentlyContinue        # 注入器还在跑
+Get-Process QQ | Sort-Object StartTime -Descending | Select-Object -First 1   # 看最新 QQ 进程起了多久
+```
+
+`guard_once.ps1` 的做法：最新 QQ 进程启动不到 200 秒，就记一行
+`6099 not up yet (NapCat still starting, wait)` 直接退出，等下一轮（5 分钟后）再看。
+

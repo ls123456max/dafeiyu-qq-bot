@@ -34,12 +34,16 @@
 
 | 路径 | 作用 |
 |---|---|
+| `install.ps1` | **一键安装**：复制脚本、改路径、生成无窗口启动器、注册计划任务（可选打补丁） |
+| `AGENTS.md` | 给 AI 代理的安装/运维指南（把它丢给你的 coding agent，能自动跑到扫码那步） |
 | `scripts/guard/` | 守护脚本：单次检查、隐藏运行、注册计划任务 |
 | `scripts/napcat/` | 启动 NapCat、二维码扫码页面、快速登录与重登 |
 | `scripts/session/` | 每天 05:00 换会话（控制 token 成本） |
 | `scripts/stickers/` | 把表情包目录导入 `_stickers`（自动改名/压缩大 GIF） |
-| `patches/fish-soul/` | 给 `dsh-fish-soul` 打的补丁：她自己上网找表情包、跨聊天共享记忆 |
+| `patches/fish-soul/` | 给 `dsh-fish-soul` 打的补丁：她自己上网找表情包（图库优先，再 Bing 搜图） |
+| `examples/` | `fish-soul-config` 示例、NapCat OneBot 示例、人格卡模板（都做了脱敏） |
 | `docs/` | 部署步骤、费用估算、故障排查 |
+| `requirements.txt` | Python 可选依赖：`qrcode`（扫码页）、`pillow`（压大 GIF） |
 
 ## 3. 前置条件
 
@@ -47,9 +51,40 @@
 - QQ NT 客户端（9.9.x 即可；4.x/旧版 QQ 不适用）
 - 一个**小号**（强烈建议，见第 7 节合规说明）
 - DeepSeek Harness（跑 `dsh-fish-soul`），或愿意改用 AstrBot + 大肥鱼配置包的等价方案
-- Python 3.10+（只给扫码页面、导入脚本用；不装也能跑，只是少了几个工具）
+- Python 3.10+（只给扫码页面、导入脚本用；`pip install -r requirements.txt`）
+
+### 3.1 需要你自己准备的东西（仓库里没有）
+
+| 东西 | 说明 |
+|---|---|
+| QQ 小号 | 单独养一个，别用主号（见第 7 节合规说明） |
+| 大模型 API Key | DeepSeek 或智谱 GLM，填进 DSH 的 provider 配置 |
+| 人格卡 | `examples/persona.example.json` 是空壳模板；真正的人格按你的角色写，导入 fish-soul 的设置页 |
+| 表情包 | 仓库不打包图片；用 `scripts/stickers/import_stickers.py` 把自己的图导进 `_stickers` |
+| NapCat | 从官方 Releases 下（`NapCat.Shell.Windows.OneKey.zip`），本仓库不重复分发 |
+| DSH + dsh-fish-soul | `dsh plugin --profile desktop add dsh-fish-soul` 安装 |
+
 
 ## 4. 快速开始
+
+### 4.0 一键安装（推荐）
+
+先把 NapCat 解压到纯英文路径（见 4.1 第 1–2 步），然后：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 `
+    -NapCatDir 'D:\NapCat' `
+    -QqDir 'C:\Program Files\Tencent\QQNT' `
+    -TargetUin '你的小号QQ'
+```
+
+它会做：环境检查 → 把 `start_napcat.bat` / `qr_portal.py` / `napcat_relogin.py` / `guard\` 复制到 `-NapCatDir`
+→ 改写 bat 里的 QQ 路径 → 生成无窗口启动器 `guard\guard_hidden.vbs`
+→ 注册计划任务 `DafeiyuGuard`（每 5 分钟兜底）→ 打印剩下必须人工做的步骤。
+
+加 `-SkipTask` 不注册计划任务、加 `-SkipPatch` 不打 fish-soul 补丁、加 `-PortalPort 6211` 换扫码页端口。
+
+只想让 AI 帮你装？把仓库地址和 `AGENTS.md` 丢给你的 coding agent，它会按里面的清单跑到「扫码」那一步停住。
 
 ### 4.1 装 NapCat 并注入 QQ
 
@@ -70,7 +105,7 @@
 
 ### 4.2 让 fish-soul 连上 QQ
 
-1. 在 NapCat 后台的「网络配置」里加一个 **WebSocket 服务器**：`127.0.0.1:6200`，消息格式 `array`
+1. 在 NapCat 后台的「网络配置」里加一个 **WebSocket 服务器**：`127.0.0.1:6200`，消息格式 `array`（可直接抄 `examples/napcat-onebot.example.json`）
 2. 装插件：`dsh plugin --profile desktop add dsh-fish-soul`
 3. 填配置（`~/.dsh/fish-soul-config.json` 或设置页）：
 
