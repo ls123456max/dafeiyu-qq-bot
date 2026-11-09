@@ -1,3 +1,0 @@
-# Python 侧可选依赖（只有扫码页和表情包压缩需要；守护脚本是纯 PowerShell，无依赖）
-qrcode>=7.4        # scripts/napcat/qr_portal.py 生成二维码 PNG
-pillow>=10.0       # scripts/stickers/import_stickers.py --shrink 压缩大 GIF
