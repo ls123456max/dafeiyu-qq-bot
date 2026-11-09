@@ -22,6 +22,8 @@ $WorkDir = $env:TEMP                    # 限流状态文件放这里
 
 $lastTryFile  = Join-Path $WorkDir 'dafeiyu_last_quicktry.txt'
 $lastKillFile = Join-Path $WorkDir 'dafeiyu_last_qqkill.txt'
+$lastRepairFile = Join-Path $WorkDir 'dafeiyu_last_repair.txt'
+$lastNotifyFile = Join-Path $WorkDir 'dafeiyu_last_notify.txt'
 $portalUrl    = "http://127.0.0.1:$PortalPort"
 $bootBat      = Join-Path $NapCatDir 'start_napcat.bat'
 
@@ -37,24 +39,6 @@ function Test-PortListening([int]$Port) {
 
 # 前台窗口是否占满整块屏幕（全屏游戏 / 全屏视频）
 function Test-FullscreenForeground {
-    
-function Remove-DuplicateQq {
-    # 同号双开是掉线头号原因：后启动的那个实例会把登录态顶掉。
-    # 只保留最早启动的那棵树（NapCat 注入的），杀掉其余实例。
-    $procs = @(Get-CimInstance Win32_Process -Filter "Name='QQ.exe'" -ErrorAction SilentlyContinue)
-    if ($procs.Count -lt 2) { return $false }
-    $ids = @{}
-    foreach ($x in $procs) { $ids[[int]$x.ProcessId] = $true }
-    $roots = @($procs | Where-Object { -not $ids.ContainsKey([int]$_.ParentProcessId) })
-    if ($roots.Count -lt 2) { return $false }
-    $keep = $roots | Sort-Object CreationDate | Select-Object -First 1
-    foreach ($r in @($roots | Where-Object { $_.ProcessId -ne $keep.ProcessId })) {
-        Log ("dup qq instance: killing root pid {0} (keep {1})" -f $r.ProcessId, $keep.ProcessId)
-        Stop-Process -Id ([int]$r.ProcessId) -Force -ErrorAction SilentlyContinue
-    }
-    Start-Sleep -Seconds 5
-    return $true
-}
 
 try {
         if (-not ('GuardFgWin' -as [type])) {
@@ -83,6 +67,24 @@ public class GuardFgWin {
     catch { return $false }
 }
 
+function Remove-DuplicateQq {
+    # 同号双开是掉线头号原因：后启动的那个实例会把登录态顶掉。
+    # 只保留最早启动的那棵树（NapCat 注入的），杀掉其余实例。
+    $procs = @(Get-CimInstance Win32_Process -Filter "Name='QQ.exe'" -ErrorAction SilentlyContinue)
+    if ($procs.Count -lt 2) { return $false }
+    $ids = @{}
+    foreach ($x in $procs) { $ids[[int]$x.ProcessId] = $true }
+    $roots = @($procs | Where-Object { -not $ids.ContainsKey([int]$_.ParentProcessId) })
+    if ($roots.Count -lt 2) { return $false }
+    $keep = $roots | Sort-Object CreationDate | Select-Object -First 1
+    foreach ($r in @($roots | Where-Object { $_.ProcessId -ne $keep.ProcessId })) {
+        Log ("dup qq instance: killing root pid {0} (keep {1})" -f $r.ProcessId, $keep.ProcessId)
+        Stop-Process -Id ([int]$r.ProcessId) -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Seconds 5
+    return $true
+}
+
 function Test-Throttled($file, [int]$minutes) {
     if (-not (Test-Path $file)) { return $false }
     $raw = (Get-Content $file -Raw -ErrorAction SilentlyContinue).Trim()
@@ -105,7 +107,114 @@ function Start-QrPortal {
     Log "qr portal started ($portalUrl, hidden)"
 }
 
+function NotificationDue([int]$minutes) {
+    if (-not (Test-Path $lastNotifyFile)) { return $true }
+    $raw = (Get-Content $lastNotifyFile -Raw -ErrorAction SilentlyContinue).Trim()
+    $when = [datetime]::MinValue
+    if (-not [datetime]::TryParse($raw, [ref]$when)) { return $true }
+    return (((Get-Date) - $when).TotalMinutes -ge $minutes)
+}
+
+function Notify-Scan {
+    # 托盘气泡：不抢焦点、不弹窗（全屏时根本走不到这里），60 分钟最多一次
+    if (-not (NotificationDue 60)) { return }
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Drawing
+        $ni = New-Object System.Windows.Forms.NotifyIcon
+        $ni.Icon = [System.Drawing.SystemIcons]::Warning
+        $ni.Visible = $true
+        $ni.BalloonTipTitle = '小鱼掉线了'
+        $ni.BalloonTipText = "需要扫码重新登录：$portalUrl"
+        $ni.BalloonTipIcon = 'Warning'
+        $ni.ShowBalloonTip(8000)
+        Start-Sleep -Seconds 6
+        $ni.Visible = $false
+        $ni.Dispose()
+        Set-LastAction $lastNotifyFile
+        Log 'notified: needs QR scan'
+    } catch {
+        Log ("notify failed: " + $_.Exception.Message)
+    }
+}
+
+function Repair-Due {
+    if (-not (Test-Path $lastRepairFile)) { return $true }
+    $raw = (Get-Content $lastRepairFile -Raw -ErrorAction SilentlyContinue).Trim()
+    $when = [datetime]::MinValue
+    if (-not [datetime]::TryParse($raw, [ref]$when)) { return $true }
+    return (((Get-Date) - $when).TotalMinutes -ge 45)
+}
+
+function Repair-Qq {
+    # QQ 内部子进程重建会让 NapCat 失联（6200 消失）。
+    # 整棵 QQ 重起一次，有时能把快速登录票据带回来，省掉一次扫码。45 分钟最多一次。
+    Log 'repair: restart QQ tree to restore quick login'
+    Set-LastAction $lastRepairFile
+    Stop-Process -Name QQ, QQEX, NapCatWinBootMain -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 4
+    if (-not (Test-Path $bootBat)) { Log "start script missing: $bootBat"; return $false }
+    Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+        CommandLine      = "cmd.exe /c start `"`" /min `"$bootBat`""
+        CurrentDirectory = $NapCatDir
+    } | Out-Null
+    for ($i = 0; $i -lt 8; $i++) {
+        Start-Sleep -Seconds 25
+        if (Test-PortListening 6099) { break }
+    }
+    return (Test-PortListening 6099)
+}
+
 # 用 NapCat 的快速登录接口尝试登回小号；失败返回 $false
+# 用本地 DPAPI 加密保存的小号密码登录（密文只有本机当前 Windows 用户能解）
+function Invoke-PasswordLogin {
+    $pwdFile = Join-Path $NapCatDir 'secrets\qq_pwd.dpapi'
+    if (-not (Test-Path $pwdFile)) { return $false }
+    try {
+        $sec = ConvertTo-SecureString ((Get-Content $pwdFile -Raw).Trim())
+        $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+        try {
+            $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+            $raw = [System.Text.Encoding]::UTF8.GetBytes($plain)
+            $md5 = [BitConverter]::ToString([System.Security.Cryptography.MD5]::Create().ComputeHash($raw)).Replace('-', '').ToLower()
+        } finally {
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+        }
+    } catch {
+        Log ("password decrypt failed: " + $_.Exception.Message)
+        return $false
+    }
+
+    $webuiCfg = Join-Path $NapCatDir 'config\webui.json'
+    if (-not (Test-Path $webuiCfg)) { Log 'webui.json not found'; return $false }
+    $token = (Get-Content $webuiCfg -Raw | ConvertFrom-Json).token
+    if (-not $token) { Log 'webui token missing'; return $false }
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($token + '.napcat')
+    $sha = [System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes)
+    $hash = -join ($sha | ForEach-Object { $_.ToString('x2') })
+
+    try {
+        $cred = (Invoke-RestMethod -Uri 'http://127.0.0.1:6099/api/auth/login' -Method Post -ContentType 'application/json' -Body (@{ hash = $hash } | ConvertTo-Json) -TimeoutSec 15).data.Credential
+        if (-not $cred) { Log 'napcat auth failed'; return $false }
+        $headers = @{ Authorization = "Bearer $cred" }
+        $res = Invoke-RestMethod -Uri 'http://127.0.0.1:6099/api/QQLogin/PasswordLogin' -Method Post -Headers $headers `
+            -ContentType 'application/json' -Body (@{ uin = $TargetUin; passwordMd5 = $md5 } | ConvertTo-Json) -TimeoutSec 30
+        if ($res.code -ne 0) {
+            Log ("password login rejected: " + $res.message)
+            return $false
+        }
+        Log 'password login accepted'
+        for ($i = 0; $i -lt 10; $i++) {
+            Start-Sleep -Seconds 8
+            if (Test-PortListening 6200) { return $true }
+        }
+        return $false
+    } catch {
+        Log ("password login error: " + $_.Exception.Message)
+        return $false
+    }
+}
+
 function Invoke-QuickLogin {
     $webuiCfg = Join-Path $NapCatDir 'config\webui.json'
     if (-not (Test-Path $webuiCfg)) { Log 'webui.json not found'; return $false }
@@ -137,7 +246,13 @@ function Invoke-QuickLogin {
         }
         for ($i = 0; $i -lt 10; $i++) {
             Start-Sleep -Seconds 6
-            if (Test-PortListening 6200) { return $true }
+            if (Test-PortListening 6200) {
+                try {
+                    Invoke-RestMethod -Uri 'http://127.0.0.1:6099/api/QQLogin/SetQuickLoginQQ' -Method Post `
+                        -Headers $headers -ContentType 'application/json' -Body (@{ uin = $TargetUin } | ConvertTo-Json) -TimeoutSec 15 | Out-Null
+                } catch { }
+                return $true
+            }
         }
         return $false
     }
@@ -204,12 +319,28 @@ try {
         if (Test-Throttled $lastTryFile 30) {
             Log '6200 down -> quick login skipped (throttled 30 min)'
             Start-QrPortal
+            Notify-Scan
             exit 0
         }
         Set-LastAction $lastTryFile
         Log '6200 down -> quick login attempt'
         $ok = Invoke-QuickLogin
-        if (-not $ok) { Start-QrPortal }
+        if (-not $ok) {
+            Log 'quick login failed -> try password login'
+            $ok = Invoke-PasswordLogin
+        }
+        if (-not $ok -and (Repair-Due)) {
+            if (Repair-Qq) {
+                Log 'repair: NapCat back up, retry quick login'
+                $ok = Invoke-QuickLogin
+            } else {
+                Log 'repair failed: 6099 did not come back'
+            }
+        }
+        if (-not $ok) {
+            Start-QrPortal
+            Notify-Scan
+        }
         if (Test-PortListening 6200) {
             Log 'ok 6099+6200 up (after quick login)'
             exit 0

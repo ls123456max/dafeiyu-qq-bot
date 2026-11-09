@@ -168,6 +168,19 @@ python patches\fish-soul\apply_patches.py --revert  # 还原
 
 注意：她只会**新增**说说，不会删旧的；`get_qzone_msg_list` 这个接口在 NapCat 上不可用（返回「响应不完整」），所以列表要去手机 QQ 空间看。
 
+### 4.5 密码登录（可选，v1.3）：掉线后完全不用扫码
+
+QQ 重建内部子进程会把「快速登录票据」一起清掉，之后只能扫码。存一份小号密码，守护就能在快速登录失效时自动用 `QQLogin/PasswordLogin` 登回去：
+
+```powershell
+# 交互式输入密码，不回显；存成 DPAPI 密文
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\napcat\set-qq-password.ps1 -NapCatDir D:\NapCat
+```
+
+- 密文位置：`<NapCatDir>\secrets\qq_pwd.dpapi`，**DPAPI 当前用户作用域**，换 Windows 用户/换机器都解不开；已在 `.gitignore` 里。
+- 守护顺序：快速登录 → 密码登录 → 整树重启后再试 → 都不行才开扫码页 + 托盘气泡。
+- 只在**小号**上用。密码登录同样是第三方客户端，违反腾讯协议的风险不变；如果账号被风控要求设备验证，密码登录也会失败，那时仍然要扫码。
+
 ## 5. 费用（一句话版）
 
 | 项目 | 费用 |
@@ -194,6 +207,7 @@ python patches\fish-soul\apply_patches.py --revert  # 还原
 | 临时停掉她 | 停 NapCat（她收不到消息），或把 `qq.enabled` 设 false |
 | 让她今天别发说说 | `kv` 里写 `feed.config = {"enabled": false}`，或把她当天要发的 `feed.last` 改成今天 |
 | 看她发过的说说 | 手机 QQ 空间；本地 `kv` 的 `feed.history` 只留最近 30 条生成记录 |
+| 她掉线了 | 看 `<NapCatDir>\guard.log`；v1.2 起需要扫码时会弹**托盘气泡**（不抢焦点），扫码页 http://127.0.0.1:6210 |
 
 ## 7. 合规与风险（务必读）
 

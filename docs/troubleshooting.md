@@ -135,6 +135,37 @@ Get-Process QQ | Sort-Object StartTime -Descending | Select-Object -First 1   # 
 ## 14. 她不发说说 / 签名没变
 
 - 补丁打完要**重启 DSH**；FeedWriter 启动后每 10 分钟 check 一次，第一次真正发要等到 9 点之后。
-- 看有没有跑过：soul.db 的 kv 表里应该有 eed.tries.<日期>；发过会有 eed.last 和 eed.history。
-- 如果 eed.tries 有、但说说没出现：多半是 ugc_right 不合法（只认 1/4/16/64/128），或账号被风控限制发说说。
-- 想临时关掉：kv 里写 eed.config = {"enabled": false}。
+- 看有没有跑过：soul.db 的 kv 表里应该有 feed.tries.<日期>；发过会有 feed.last 和 feed.history。
+- 如果 feed.tries 有、但说说没出现：多半是 ugc_right 不合法（只认 1/4/16/64/128），或账号被风控限制发说说。
+- 想临时关掉：kv 里写 feed.config = {"enabled": false}。
+## 15. 我什么都没干，为什么她会掉线
+
+QQ 会自己重建它的子进程（utility/node、
+etwork、gpu），而 NapCat 就跑在其中一个子进程里。
+子进程一换，NapCat 跟着重启：6200 消失，小号的「快速登录」票据有时会一起丢，于是必须重新扫码。
+
+判断方法（guard.log / oot.log）：
+
+`	ext
+15:23:04 [guard] ok 6099+6200 up          ← 还在线
+15:28:04 [guard] 6200 down -> quick login attempt
+15:28:07 [guard] quick login record for 1000000000 is gone -> needs QR scan
+`
+
+Get-Process QQ | Select Id, StartTime 会看到同一个 QQ 根进程的子进程启动时间比根进程晚很多，
+这就是「QQ 没重启、但 NapCat 换了宿主」的特征。
+
+守护脚本从 v1.2 起会：快速登录失败 → 整棵 QQ 重起一次再试（45 分钟限流）→ 仍失败才开扫码页并发托盘气泡。
+所以正常情况下你现在会先看到一个「小鱼掉线了，去 6210 扫码」的气泡，而不是几小时后才发现。
+
+要彻底避免扫码，只能让 QQ 自己记住密码（客户端里勾「自动登录」）；纯协议侧无法持久化登录态。
+## 16. 密码登录为什么会失败
+
+| 报错 | 含义 | 怎么办 |
+|---|---|---|
+| `passwordMd5 is empty` | 请求里没带 md5 | 用 `set-qq-password.ps1` 重新存一次密文 |
+| `password decrypt failed` | DPAPI 解不开（换了 Windows 用户/机器） | 用同一个用户重新存 |
+| `登录态已失效，请重新登录` | 账号被风控、需要设备验证 | 只能扫码，扫完再试一次 |
+| `QQ Is Logined` | 已经登着了，重复调用 | 正常，忽略 |
+
+密码登录只在**小号**上用；它不改变「第三方客户端违反协议」这件事，只是把扫码换成自动重登。
