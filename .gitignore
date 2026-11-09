@@ -1,10 +1,23 @@
+# 日志与本地状态
+*.log
+last_qqkill.txt
+last_quicktry.txt
+
+# Python
 __pycache__/
 *.pyc
+.venv/
+venv/
+
+# 本地配置与密钥（绝对不要提交）
 .env
-*.log
-soul.db
-persona.json
-_stickers/
+*.secret
+fish-soul-config.json
+.credentials.yaml
 webui.json
-napcat_cred.txt
-token.txt
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

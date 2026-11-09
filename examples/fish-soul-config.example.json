@@ -1,0 +1,40 @@
+{
+  "masterQqUin": "1000000000",
+  "qq": {
+    "enabled": true,
+    "wsUrl": "ws://127.0.0.1:6200",
+    "accessToken": "",
+    "allGroups": false,
+    "groupAllowList": ["123456789"],
+    "callNames": ["小鱼", "大肥鱼"],
+    "followUpCount": 3,
+    "followUpSeconds": 120,
+    "interject": {
+      "enabled": true,
+      "chance": 0.3,
+      "cooldownMinutes": 3,
+      "maxPerHour": 8,
+      "masterQuiet": true,
+      "masterQuietMinutes": 5
+    }
+  },
+  "tools": {
+    "web": { "enabled": true, "perDay": 50, "provider": "host" },
+    "sessionAllow": "memory"
+  },
+  "douyin": {
+    "enabled": true,
+    "autoReply": false,
+    "browser": { "kind": "edge" },
+    "browse": {
+      "enabled": true,
+      "perDay": 10,
+      "videosPerSession": 20,
+      "like": false,
+      "share": true,
+      "shareInDm": false
+    }
+  },
+  "memory": { "autoExtract": true, "idleMinutes": 10, "maxLines": 40 },
+  "sessions": { "workspacePath": "" }
+}
