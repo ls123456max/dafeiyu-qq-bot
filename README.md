@@ -1,4 +1,4 @@
-﻿# 大肥鱼 QQ Bot · 部署与运维工具包
+# 大肥鱼 QQ Bot · 部署与运维工具包
 
 > ## ⚠️ 免责声明（先读这一段）
 >
@@ -179,7 +179,31 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\napcat\set-qq-passwo
 
 - 密文位置：`<NapCatDir>\secrets\qq_pwd.dpapi`，**DPAPI 当前用户作用域**，换 Windows 用户/换机器都解不开；已在 `.gitignore` 里。
 - 守护顺序：快速登录 → 密码登录 → 整树重启后再试 → 都不行才开扫码页 + 托盘气泡。
+- 如果 QQ 风控要求短信验证，密码登录会失败，并把一次性验证链接写到 `<NapCatDir>\last_captcha.txt`；这种情况直接扫码更快。
 - 只在**小号**上用。密码登录同样是第三方客户端，违反腾讯协议的风险不变；如果账号被风控要求设备验证，密码登录也会失败，那时仍然要扫码。
+
+### 4.6 开机就自动登上（可选，v1.3.9）
+
+4.5 解决的是「掉了之后能自己爬回来」，但**开机那一轮**仍然会卡在扫码：QQ 重建后快速登录票据表里没有小号，密码登录又常撞风控。
+
+NapCat 在启动 QQ 时会读两个环境变量，直接走快速登录：
+
+| 变量 | 值 |
+|---|---|
+| `NAPCAT_QUICK_ACCOUNT` | 机器人小号 QQ（纯数字） |
+| `NAPCAT_QUICK_PASSWORD_MD5` | 密码明文按 UTF-8 取 MD5，32 位小写 |
+
+`scripts\napcat\start_napcat.bat` 在拉起 `NapCatWinBootMain.exe` 之前，若发现 `<NapCatDir>\secrets\quick_login.env` 就先 `call` 它。生成方式：
+
+```powershell
+# 存 DPAPI 密文（守护用）+ 生成快速登录 env（开机用）
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\napcat\set-qq-password.ps1 `
+  -NapCatDir D:\NapCat -Uin 1000000000 -QuickLogin
+```
+
+- env 里是**明文 MD5**，等同于密码的 API 凭据；脚本会自动把 ACL 收紧到当前 Windows 用户，`secrets/` 也已在 `.gitignore` 里。
+- 生效前提：启动前 QQ 必须完全没在跑。`start_napcat.bat` 检测到已有 `QQ.exe` 会直接退出，env 根本不会生效。
+- 快速登录仍依赖 QQ 那边的「记住密码」票据；票据被清掉时会自动退到密码登录（见 4.5），再不行才扫码。
 
 ## 5. 费用（一句话版）
 
@@ -228,8 +252,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\napcat\set-qq-passwo
 5. 两个 QQ 实例同时跑（重复拉起）→ 登录态被顶掉、频繁要扫码；**启动前必须检查单实例**
 6. NapCat 从启动到 6099 监听要 **2–3 分钟**，等待窗口别设太短
 7. 群消息收不到 ≠ 白名单问题，先重启一次 QQ 客户端
-8. `get_supported_actions` 在 NapCat 的 Debug 适配器上返回 0 条，不要用它判断能力；`send_qzone_msg` / `set_self_longnick` 是实测可用的
-9. `send_qzone_msg` 的 `ugc_right` 只认 `1/4/16/64/128`，乱填会失败；`get_qzone_msg_list` 不可用（响应不完整）
+8. `wscript.exe start_napcat_hidden.vbs` 在 QQ 完全没运行时会把 wscript 挂住、拉不起 NapCat（v1.3.7 踩过，v1.3.8 改回 `cmd /c start "" /min start_napcat.bat`，起来后由 guard 自动隐藏那个控制台窗口）
+9. `get_supported_actions` 在 NapCat 的 Debug 适配器上返回 0 条，不要用它判断能力；`send_qzone_msg` / `set_self_longnick` 是实测可用的
+10. `send_qzone_msg` 的 `ugc_right` 只认 `1/4/16/64/128`，乱填会失败；`get_qzone_msg_list` 不可用（响应不完整）
 
 ## 9. 参考
 

@@ -1,4 +1,65 @@
-﻿# 更新记录
+# 更新记录
+
+## v1.3.9（2026-11-25）
+
+### 新增：开机就自动登录，不用等人扫码
+
+- `scripts/napcat/start_napcat.bat` 在拉起 `NapCatWinBootMain.exe` 之前，若存在 `<NapCatDir>\secrets\quick_login.env`，先 `call` 它，把 `NAPCAT_QUICK_ACCOUNT` / `NAPCAT_QUICK_PASSWORD_MD5` 注入环境。NapCat 启动时会用这两个值走 `requestQuickLogin`，失败再退到 `requestPasswordLogin`，全程不拉二维码。
+- `scripts/napcat/set-qq-password.ps1` 新增 `-Uin` / `-QuickLogin`：存 DPAPI 密文的同一次，额外生成这份 env（ASCII、无 BOM、ACL 只留当前 Windows 用户）。MD5 算法与 `guard_once.ps1` 的 `Invoke-PasswordLogin` 完全一致（明文按 UTF-8 取 MD5，32 位小写）。
+- 背景：v1.3.8 修的是「掉线后能自愈」，但**开机/重启**那一轮仍要扫码——QQ 重建后快速登录票据表里没有小号，密码登录又撞风控。补上 env 后，正常关机的下一次开机可以做到零人工。
+- 现象对照：补之前开机日志是 `quick login failed -> no record`，随后 `needCaptcha`；补之后同一条链路直接走通。
+- 注意：env 里是明文 MD5，等同于密码的 API 凭据。不要提交，`secrets/` 已在 `.gitignore` 里。
+
+## v1.3.8（2026-11-16）
+
+### 修复：隐藏启动器会挂住
+
+- v1.3.7 引入的 `wscript.exe start_napcat_hidden.vbs` 在 **QQ 完全没运行** 时会把 wscript 挂住、不启动 NapCat：守护每 5 分钟记录一次 `NapCat(6099) down -> start`，但永远拉不起来（2026-11-16 21:18–22:22 连续 4 次失败）。
+- `guard_once.ps1` 的两处启动命令改回稳定的 `cmd.exe /c start "" /min "<NapCatDir>\start_napcat.bat"`（WMI 分离启动），并在 6099 起来后调用新增的 `Hide-NapcatWindow`，把那个最小化控制台用 `ShowWindow(hwnd, 0)` 藏掉，不杀进程。
+- 日志新增：`hid console window: <进程名> pid <pid>`。
+- `start_napcat_hidden.vbs` 仍保留在仓库里，但**不再被守护使用**（手动双击仍可用，前提是 QQ 已在运行）。
+
+## v1.3.7（2026-11-11）
+
+### 修复：控制台窗口不再弹到桌面
+
+- 新增 `scripts/napcat/start_napcat_hidden.vbs`：自定位到同目录的 `start_napcat.bat`，用 `WScript.Shell.Run` 的窗口样式 `0` 启动，控制台从头就是隐藏的，任务栏不留东西。
+- `scripts/guard/guard_once.ps1` 里两处拉起 NapCat 的命令从 `cmd.exe /c start "" /min ...` 改成 `wscript.exe <NapCatDir>\start_napcat_hidden.vbs`。
+- 新增 `scripts/session/rotate_hidden.vbs`：给「每天 05:00 换会话」的计划任务用，不再闪 powershell 窗口。
+- `install.ps1` 会一并复制隐藏启动器；`README.md` / `AGENTS.md` 里的 WMI 启动示例同步更新。
+- 说明：`cmd /c start "" /min xxx.bat` 只把窗口最小化，NapCat 进程挂在这个控制台下面，窗口会一直留在任务栏——这是之前「老弹黑框」的根源。
+
+## v1.3.6（2026-11-10）
+
+### 修复：v1.3.4 的闸门插错了位置，机器重启后守护永远不启动 NapCat
+
+v1.3.4 想加「6099 没起来就别试登录」，但字符串替换匹配到了前面「去重检查」那行 `if (-not (Listening 6200))`，闸门被插到「启动 NapCat」之前。结果：机器重启后每一轮守护都在启动 NapCat 前就 `exit 0`，日志只有 `6099 not up yet -> skip login this round`，一整天没把她拉起来。
+
+现在闸门挪到 6099 启动逻辑之后、6200 检查之前。实测：修好后手动跑一次，6099 正常起来（pid 15788）。
+
+## v1.3.5（2026-11-09）
+
+### 改进：整树重启先「温和退出」，别再把 QQ 的账号凭据弄丢
+
+根因：QQ 把「记住密码」的账号表写在 `nt_db\login.db`（另有 4MB 的 `login.db-wal`）。守护过去用 `Stop-Process -Force` 直接砍进程，WAL 来不及 checkpoint，账号记录就一直没落盘——于是 `GetQuickLoginListNew` 里永远只有别的号。
+
+现在 `Repair-Qq` 改为先 `Stop-QqSoft()`：对每个 QQ 进程 `CloseMainWindow()` → 等最多 8 秒 → 还在才 `Stop-Process -Force`，然后再清 QQEX / NapCatWinBootMain。只影响「整树修复」这一条路径，日常检查不会碰 QQ。
+
+## v1.3.4（2026-11-09）
+
+### 修复：NapCat 还在启动时不要去试登录
+
+22:16 那次掉线里，守护在 6099 还没起来时就去快速登录，拿到 `无法连接到远程服务器`，却把 30 分钟限流用掉了，后面真正的重试反而被挡。现在 6099 不为听时直接跳过本轮，不消耗限流。
+
+## v1.3.3（2026-11-09）
+
+### 修复：密码登录与整树重启的三个坑
+
+- **密码登录不再把 `needCaptcha` 当成功**：QQ 风控要求短信验证时，登录不会真的完成；现在把验证链接写到 `<NapCatDir>\last_captcha.txt`，日志记 `password login needs SMS captcha -> ...`，并直接进入「需要扫码」分支。
+- **需要扫码时不再做整树重启**：快速登录记录已丢 / 要求短信验证的情况下重启只会把仅存的票据也清掉；现在这两种情况只开扫码页 + 托盘提醒。
+- **整树重启降频**：45 分钟一次 → **每天最多一次**，避免持续触发风控。
+
+实测（2026-11-09 19:53）：QQ 要求短信验证，守护按新逻辑不再空转重启；用户扫码后 6200 立刻恢复。
 
 ## v1.3.2（2026-11-09）
 

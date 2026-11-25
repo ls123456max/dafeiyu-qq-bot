@@ -21,3 +21,5 @@ webui.json
 .idea/
 .DS_Store
 Thumbs.db
+# 密码密文（DPAPI，仅本机可解）
+secrets/

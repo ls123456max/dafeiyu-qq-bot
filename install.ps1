@@ -68,6 +68,7 @@ $guardDir = Join-Path $NapCatDir 'guard'
 New-Item -ItemType Directory -Path $guardDir -Force | Out-Null
 
 Copy-Item (Join-Path $root 'scripts\napcat\start_napcat.bat')  (Join-Path $NapCatDir 'start_napcat.bat')  -Force
+Copy-Item (Join-Path $root 'scripts\napcat\start_napcat_hidden.vbs') (Join-Path $NapCatDir 'start_napcat_hidden.vbs') -Force
 Copy-Item (Join-Path $root 'scripts\napcat\qr_portal.py')      (Join-Path $NapCatDir 'qr_portal.py')      -Force
 Copy-Item (Join-Path $root 'scripts\napcat\napcat_relogin.py') (Join-Path $NapCatDir 'napcat_relogin.py') -Force
 Copy-Item (Join-Path $root 'scripts\guard\guard_once.ps1')     (Join-Path $guardDir 'guard_once.ps1')     -Force
